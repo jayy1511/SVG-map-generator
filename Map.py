@@ -1,145 +1,157 @@
-from abc import ABC, abstractmethod
+import json
+from abc import ABC
 from dataclasses import dataclass
 from typing import List, Tuple, ClassVar
 from Geometry import GeometryObject
-import json
 
 
 @dataclass
 class MapElement(ABC):
     geometry: GeometryObject
     stroke: ClassVar[str] = "black"
-    stroke_width: ClassVar[float] = 1.0
+    stroke_width: ClassVar[float] = 1
     fill: ClassVar[str] = "none"
     marker: ClassVar[str] = "none"
-    z_order: ClassVar[int] = 0
     filter: ClassVar[str] = "none"
+    z_order: ClassVar[float] = 0
 
-    def __str__(self) -> str:
+    def __str__(self):
         return self.geometry.to_svg(self.__class__.__name__)
 
     @staticmethod
-    def FromDict(data: dict) -> "MapElement":
-        # Create a GeometryObject from the data
+    def FromDict(data: dict) -> 'MapElement':
         g = GeometryObject.FromDict(data)
+        if data["id"] == "earth":
+            return Earth(geometry=g)
+        if data["id"] == "rivers":
+            return River(geometry=g)
+        if data["id"] == "walls":
+            return Wall(geometry=g)
+        if data["id"] == "planks":
+            return Plank(geometry=g)
         if data["id"] == "roads":
             return Road(geometry=g)
-        elif data["id"] == "buildings":
+        if data["id"] == "buildings":
             return Building(geometry=g)
-        elif data["id"] == "rivers":
-            return River(geometry=g)
-        elif data["id"] == "walls":
-            return Wall(geometry=g)
-        elif data["id"] == "planks":
-            return Plank(geometry=g)
-        elif data["id"] == "prisms":
+        if data["id"] == "prisms":
             return Prism(geometry=g)
-        elif data["id"] == "squares":
+        if data["id"] == "squares":
             return Square(geometry=g)
-        elif data["id"] == "greens":
+        if data["id"] == "greens":
             return Green(geometry=g)
-        elif data["id"] == "fields":
+        if data["id"] == "fields":
             return Field(geometry=g)
-        elif data["id"] == "districts":
-            return District(geometry=g)
-        elif data["id"] == "trees":
+        if data["id"] == "trees":
             return Tree(geometry=g)
-        elif data["id"] == "earth":
-            return Earth(geometry=g)
-        elif data["id"] == "water":
+        if data["id"] == "districts":
+            return District(geometry=g)
+        if data["id"] == "water":
             return Water(geometry=g)
 
-
-class Road(MapElement):
-    stroke: ClassVar[str] = "#FFF2C8"
-    stroke_width: ClassVar[float] = 8.0
-    z_order: ClassVar[int] = 1
-
-
-class Building(MapElement):
-    stroke: ClassVar[str] = "none"
-    fill: ClassVar[str] = "#D6A36E"
-    filter: ClassVar[str] = "url(#shadow)"
-
-
-class River(MapElement):
-    stroke: ClassVar[str] = "#779988"
-    stroke_width: ClassVar[float] = 36.79280025660657
-
-
-class Wall(MapElement):
-    marker: ClassVar[str] = "url(#wall)"
-    stroke: ClassVar[str] = "#606661"
-    stroke_width: ClassVar[float] = 7.6
-
-
-class Plank(MapElement):
-    stroke: ClassVar[str] = "FFF2C8"
-
-
-class Prism(MapElement):
-    stroke: ClassVar[str] = "none"
-
-
-class Square(MapElement):
-    fill: ClassVar[str] = "#F2F2DA"
-
-
-class Green(MapElement):
-    stroke: ClassVar[str] = "#99AA77"
-    fill: ClassVar[str] = "url(#green)"
-
-
-class Field(MapElement):
-    stroke: ClassVar[str] = "#99AA77"
-    fill: ClassVar[str] = "url(#green)"
-
-
-class Tree(MapElement):
-    fill: ClassVar[str] = "#667755"
-
-
-class District(MapElement):
-    stroke: ClassVar[str] = "none"
+    def bounding_box(self) -> Tuple[float, float, float, float]:
+        return self.geometry.bounding_box()
 
 
 class Earth(MapElement):
-    stroke: ClassVar[str] = "none"
+    pass
+
+
+class River(MapElement):
+    stroke = "#779988"
+    pass
+
+
+class Wall(MapElement):
+    stroke = "#606661"
+    marker = "url(#wall)"
+    pass
+
+
+class Plank(MapElement):
+    stroke = "#FFF2C8"
+    pass
+
+
+class Road(MapElement):
+    stroke = "#FFF2C8"
+    z_order = 1
+    pass
+
+
+class Building(MapElement):
+    fill = "#D6A36E"
+    filter = "url(#shadow)"
+    pass
+
+
+class Prism(MapElement):
+    pass
+
+
+class Square(MapElement):
+    fill = "#F2F2DA"
+    pass
+
+
+class Green(MapElement):
+    stroke = "#99AA77"
+    fill = "url(#green)"
+    pass
+
+
+class Field(MapElement):
+    stroke = "#99AA77"
+    fill = "url(#green)"
+    pass
+
+
+class Tree(MapElement):
+    fill = "#667755"
+    pass
+
+
+class District(MapElement):
+    stroke = "none"
+    pass
 
 
 class Water(MapElement):
-    stroke: ClassVar[str] = "none"
-    fill: ClassVar[str] = "#779988"
+    fill = "#779988"
+    pass
 
 
 @dataclass
 class Map:
     items: List[MapElement]
 
-    def LoadFromGeoJson(filename: str) -> "Map":
+    @staticmethod
+    def LoadFromGeoJson(filename: str) -> 'Map':
         items = []
-        # Load the data from the json file
-        # Create the map elements and store them in a list that will be returned
-        with open(filename, "r") as f:
+        roads = []
+        with open(filename, 'r') as f:
             data = json.load(f)
-            for feature in data["features"]:
-                myobject = MapElement.FromDict(feature)
-                if myobject is not None:
-                    items.append(myobject)
+        for feature in data['features']:
+            if feature['id'] == "values":
+                Road.stroke_width = feature['roadWidth']
+                Wall.stroke_width = feature['roadWidth']
+                if 'riverWidth' in data['features'][0]:
+                    River.stroke_width = feature['riverWidth']
+            elif feature['id'] == "roads":
+                roads.append(MapElement.FromDict(feature))
+            else:
+                items.append(MapElement.FromDict(feature))
+            items += roads
         return Map(items)
 
     def bounding_box(self) -> Tuple[float, float, float, float]:
-        bbox = []
-        for o in self.items:
-            if isinstance(o, District):
-                bbox.append(o.geometry.bounding_box())
-        if len(bbox) == 0:
-            return (0, 0, 0, 0)
-        else:
-            xmin = min([xmin for (xmin, ymin, xmax, ymax) in bbox])
-            ymin = min([ymin for (xmin, ymin, xmax, ymax) in bbox])
-            xmax = max([xmax for (xmin, ymin, xmax, ymax) in bbox])
-            ymax = max([ymax for (xmin, ymin, xmax, ymax) in bbox])
-        w = xmax - xmin
-        h = ymax - ymin
-        return (xmin - w * 0.1, ymin - h * 0.1, xmax + w * 0.1, ymax + h * 0.1)
+        min_x, min_y, max_x, max_y = 0, 0, 0, 0
+        for obj in self.items:
+            if isinstance(obj, District):
+                mix, miy, mx, may = obj.bounding_box()
+                min_x = min(mix, min_x)
+                min_y = min(miy, min_y)
+                max_x = max(mx, max_x)
+                max_y = max(may, max_y)
+        delta_x = (max_x - min_x) / 5
+        delta_y = (max_y - min_y) / 5
+        return min_x - delta_x, min_y - delta_y, max_x + delta_x, max_y + delta_y
