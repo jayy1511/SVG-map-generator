@@ -6,28 +6,25 @@ from typing import List, Tuple
 class GeometryObject(ABC):
     @staticmethod
     @abstractmethod
-    def FromDict(data: dict) -> "GeometryObject":
+    def FromDict(data: dict) -> 'GeometryObject':
         if data["type"] == "Point":
             return Point.FromDict(data)
-        if data["type"] == "LineString":
+        elif data["type"] == "LineString":
             return LineString.FromDict(data)
         elif data["type"] == "Polygon":
             return Polygon.FromDict(data)
-        elif data["type"] in (
-            "MultiPoint",
-            "MultiLineString",
-            "MultiPolygon",
-            "GeometryCollection",
-        ):
+        elif data["type"] in ["MultiPoint", "MultiLineString", "MultiPolygon", "GeometryCollection"]:
             return Composite.FromDict(data)
-        # Do the same for LineString, Polygon and Composite...
-
-    def bounding_box(self) -> Tuple[float, float, float, float]:
-        pass
 
     @abstractmethod
-    def to_svg(self) -> str:
-        pass
+    def bounding_box(self) -> Tuple[float, float, float, float]:
+        return +float("inf"), +float("inf"), -float("inf"), -float("inf")
+
+    def to_svg(self, classname: str) -> str:
+        return "<fix>"
+
+    def __str__(self):
+        return self.to_svg("")
 
 
 @dataclass
@@ -36,9 +33,9 @@ class Point(GeometryObject):
     y: float
 
     @staticmethod
-    def FromDict(data: dict) -> "Point":
+    def FromDict(data: dict) -> 'Point':
         coordinates = data["coordinates"]
-        return Point(coordinates[0], coordinates[1])  # constructor
+        return Point(coordinates[0], coordinates[1])
 
     def bounding_box(self) -> Tuple[float, float, float, float]:
         return self.x, self.y, self.x, self.y
@@ -47,49 +44,49 @@ class Point(GeometryObject):
         return f'<circle class="{classname}" cx="{self.x}" cy="{self.y}" />'
 
 
-# Do the same for LineString, Polygon and Composite
 @dataclass
 class LineString(GeometryObject):
     coordinates: List[Point]
 
     @staticmethod
-    def FromDict(data: dict) -> "LineString":
-        coord = []
-        for x, y in data["coordinates"]:
-            coord.append(Point(x, y))
-        return LineString(coord)
+    def FromDict(data: dict) -> 'LineString':
+        coordinates = [Point(x, y) for x, y in data["coordinates"]]
+        return LineString(coordinates)
 
     def bounding_box(self) -> Tuple[float, float, float, float]:
-        x_lst = [p.x for p in self.coordinates]
-        y_lst = [p.y for p in self.coordinates]
-        return (min(x_lst), min(y_lst), max(x_lst), max(y_lst))
+        min_x, min_y, max_x, max_y = 0, 0, 0, 0
+        for i in self.coordinates:
+            min_x = min(i.x, min_x)
+            min_y = min(i.y, min_y)
+            max_x = max(i.x, max_x)
+            max_y = max(i.y, max_y)
+        return min_x, min_y, max_x, max_y
 
     def to_svg(self, classname: str) -> str:
-        s = f'<polyline class="{classname}" points="'
+        s = f"<polyline class=\"{classname}\" points=\""
         for p in self.coordinates:
-            s += f"{p.x}, {p.y} "
-        s += '" /> '
+            s += f"{p.x},{p.y} "
+        s += "\" />"
         return s
 
 
 @dataclass
 class Polygon(GeometryObject):
-    line_1: List[LineString]
+    line: LineString
 
     @staticmethod
-    def FromDict(data: dict) -> "Polygon":
-        line_1 = LineString([Point(x, y) for (x, y) in data["coordinates"][0]])
-
-        return Polygon(line_1)
+    def FromDict(data: dict) -> 'Polygon':
+        line = LineString([Point(x, y) for x, y in data["coordinates"][0]])
+        return Polygon(line)
 
     def bounding_box(self) -> Tuple[float, float, float, float]:
-        return self.line_1.bounding_box()
+        return self.line.bounding_box()
 
     def to_svg(self, classname: str) -> str:
-        s = f'<polygon class="{classname}" points="'
-        for p in self.line_1.coordinates:
-            s += f"{p.x}, {p.y} "
-        s += '" /> '
+        s = f"<polygon class=\"{classname}\" points=\""
+        for p in self.line.coordinates:
+            s += f"{p.x},{p.y} "
+        s += "\" />"
         return s
 
 
@@ -98,41 +95,29 @@ class Composite(GeometryObject):
     objects: List[GeometryObject]
 
     @staticmethod
-    def FromDict(data: dict) -> "Composite":
-        objects = []
+    def FromDict(data: dict) -> 'Composite':
         if data["type"] == "MultiPoint":
-            return Composite([Point(x, y) for (x, y) in data["coordinates"]])
+            return Composite([Point(x, y) for x, y in data["coordinates"]])
         elif data["type"] == "MultiLineString":
-            return Composite(
-                [
-                    LineString([Point(x, y) for (x, y) in line])
-                    for line in data["coordinates"]
-                ]
-            )
+            return Composite([LineString([Point(x, y) for (x, y) in line]) for line in data["coordinates"]])
         elif data["type"] == "MultiPolygon":
-            for polygon in data["coordinates"]:
-                line = polygon[0]
-                pts = LineString([Point(x, y) for (x, y) in line])
-                objects.append(pts)
-            return Composite(objects)
-        else:
-            return Composite([GeometryObject.FromDict(x) for x in data["geometries"]])
+            return Composite(
+                [Polygon(LineString([Point(x, y) for (x, y) in polygon[0]])) for polygon in data["coordinates"]])
+        elif data["type"] == "GeometryCollection":
+            return Composite([GeometryObject.FromDict(obj) for obj in data["geometries"]])
 
     def bounding_box(self) -> Tuple[float, float, float, float]:
-        # return the bounding box of the union of the bounding boxes of the objects
-        if len(self.objects) == 0:
-            return super().bounding_box()
-
-        bbox = [o.bounding_box() for o in self.objects]
-        xmin = min([xmin for (xmin, ymin, xmax, ymax) in bbox])
-        ymin = min([ymin for (xmin, ymin, xmax, ymax) in bbox])
-        xmax = max([xmax for (xmin, ymin, xmax, ymax) in bbox])
-        ymax = max([ymax for (xmin, ymin, xmax, ymax) in bbox])
-
-        return (xmin, ymin, xmax, ymax)
+        min_x, min_y, max_x, max_y = 0, 0, 0, 0
+        for obj in self.objects:
+            mix, miy, mx, may = obj.bounding_box()
+            min_x = min(mix, min_x)
+            min_y = min(miy, min_y)
+            max_x = max(mx, max_x)
+            max_y = max(may, max_y)
+        return min_x, min_y, max_x, max_y
 
     def to_svg(self, classname: str) -> str:
         s = ""
-        for o in self.objects:
-            s += o.to_svg(classname) + "\n"
+        for obj in self.objects:
+            s += obj.to_svg(classname) + "\n"
         return s
