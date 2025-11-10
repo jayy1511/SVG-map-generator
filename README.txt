@@ -1,1 +1,0 @@
-Hello sir, I couldn't do after the bouding box section , I tried to do svg rendering but I am getting so many error and I couldn't solve the errors by myself, So I have attached all my code so far, in this zip file.
